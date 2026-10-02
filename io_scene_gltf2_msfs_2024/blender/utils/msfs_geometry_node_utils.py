@@ -6,6 +6,8 @@ from typing import Any
 
 import bpy
 
+from _addons_common import geometry_node_utils
+
 def get_input_identifier(
     node_group: bpy.types.NodeGroup, input_label: str
 ) -> None | str:
@@ -71,7 +73,7 @@ def get_modifier_input(
     input_identifier = get_input_identifier(modifier.node_group, input_label)
     if not input_identifier:
         return None
-    return modifier[input_identifier]
+    return geometry_node_utils.get_modifier_input_value(modifier, input_identifier)
 
 
 def set_modifier_input(modifier: bpy.types.Modifier, input_label: str, value: Any):
@@ -84,4 +86,4 @@ def set_modifier_input(modifier: bpy.types.Modifier, input_label: str, value: An
     input_identifier = get_input_identifier(modifier.node_group, input_label)
     if not input_identifier:
         return
-    modifier[input_identifier] = value
+    geometry_node_utils.set_modifier_input_value(modifier, input_identifier, value)

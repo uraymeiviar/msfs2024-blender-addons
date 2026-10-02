@@ -1,5 +1,6 @@
 import bpy
 
+from _addons_common import geometry_node_utils
 from lod_tools_msfs_2024 import data_utils, lod_viewer
 
 class ActiveLODViewer():
@@ -35,5 +36,6 @@ def on_active_changed(active_object: bpy.types.Object | None):
         lod_viewer.MSFS2024LODViewerInputs.LOD_COUNT.value, None
     )
     if lod_count_identifier:
-        ActiveLODViewer.lod_count = ActiveLODViewer.modifier.get(lod_count_identifier)
+        ActiveLODViewer.lod_count = geometry_node_utils.get_modifier_input_value(
+            ActiveLODViewer.modifier, lod_count_identifier)
     ActiveLODViewer.valid_lod_viewer = True

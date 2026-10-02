@@ -351,7 +351,7 @@ def send_lod_setup_to_exporter(obj: bpy.types.Object) -> bool | type[data_proper
     if not lod_count_identifier:
         return False
 
-    lod_count = lod_viewer_modifier.get(lod_count_identifier)
+    lod_count = geometry_node_utils.get_modifier_input_value(lod_viewer_modifier, lod_count_identifier)
     if not lod_count > 1 or lod_count != len(source.lods):
         return False
 
@@ -362,9 +362,8 @@ def send_lod_setup_to_exporter(obj: bpy.types.Object) -> bool | type[data_proper
         screen_size_identifier = lod_viewer_input_map.get(screen_size_label.value, None)
         if not screen_size_identifier:
             return False
-        try:
-            val = lod_viewer_modifier[screen_size_identifier]
-        except:
+        val = geometry_node_utils.get_modifier_input_value(lod_viewer_modifier, screen_size_identifier)
+        if val is None:
             return False
         source.lods[i].lod_value = val
 

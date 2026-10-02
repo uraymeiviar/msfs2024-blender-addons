@@ -135,6 +135,42 @@ def _is_geometry_node_modifier(modifier):
         return False
     return True
 
+def get_modifier_input_value(
+    modifier: bpy.types.Modifier, input_identifier: str, default: Any = None
+) -> Any:
+    """
+    Get modifier input value using the input identifier ("Socket_0", ...).
+
+    Blender 5.0 replaced the ID properties behind geometry node modifier inputs
+    (modifier["Socket_0"]) with typed RNA (modifier.properties.inputs.Socket_0.value).
+    Menu sockets are returned as their integer item value, as the ID property was.
+    """
+    if hasattr(modifier, "properties"):
+        socket = getattr(modifier.properties.inputs, input_identifier, None)
+        if socket is None:
+            return default
+        value_prop = socket.bl_rna.properties["value"]
+        if value_prop.type == "ENUM":
+            return value_prop.enum_items[socket.value].value
+        return socket.value
+    return modifier.get(input_identifier, default)
+
+
+def set_modifier_input_value(modifier: bpy.types.Modifier, input_identifier: str, value: Any):
+    """
+    Set modifier input value using the input identifier (see get_modifier_input_value).
+    Menu sockets accept their integer item value, as the ID property did.
+    """
+    if hasattr(modifier, "properties"):
+        socket = getattr(modifier.properties.inputs, input_identifier)
+        value_prop = socket.bl_rna.properties["value"]
+        if value_prop.type == "ENUM" and isinstance(value, int):
+            value = next(item.identifier for item in value_prop.enum_items if item.value == value)
+        socket.value = value
+    else:
+        modifier[input_identifier] = value
+
+
 def get_modifier_input(
     modifier: bpy.types.Modifier, input_label: str
 ) -> Any | NotFound:
@@ -147,7 +183,7 @@ def get_modifier_input(
     input_identifier = get_input_identifier(modifier.node_group, input_label)
     if not input_identifier:
         return NotFound
-    return modifier[input_identifier]
+    return get_modifier_input_value(modifier, input_identifier, NotFound)
 
 
 def set_modifier_input(modifier: bpy.types.Modifier, input_label: str, value: Any):
@@ -160,6 +196,6 @@ def set_modifier_input(modifier: bpy.types.Modifier, input_label: str, value: An
     input_identifier = get_input_identifier(modifier.node_group, input_label)
     if not input_identifier:
         return
-    modifier[input_identifier] = value
+    set_modifier_input_value(modifier, input_identifier, value)
 
 # endregion
