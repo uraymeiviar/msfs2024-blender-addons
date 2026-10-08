@@ -10,11 +10,18 @@ only as a last resort.
 Be carrefull, these wrappers are not correctly reloaded at runtime. It's safer to restart
 blender after updating them.
 """
+import os
+from pathlib import Path
 
-from ..com.extensions import asobo_property_animation
+from _addons_common import p4
+
+from io_scene_gltf2_msfs_2024.io.com.extensions import asobo_property_animation
+from io_scene_gltf2_msfs_2024.io.com import msfs_logs
+
 import bpy
 
-# Functions before patch
+
+# Functions before patch - Force Keep animation patch
 _original_gather_sample_object_channel = None
 _original_gather_sample_bone_channel = None
 _original_get_positions = None
@@ -22,7 +29,7 @@ _original_get_normals = None
 _PrimitiveCreator = None
 _gltf2_blender_extract = None
 
-# region Animation
+# region Animation Fix
 def _reset_force_keep_animation(khronos_export_settings: dict):
     khronos_export_settings["gltf_optimize_animation_keep_object"] = (
         asobo_property_animation.export_cache.force_keep_obj_anim_original_value
@@ -234,15 +241,14 @@ if bpy.app.version >= (3, 6, 0):
         engine to correctly load skinned meshes.
         """
         global _original_get_positions
-        
+
         _original_get_positions(self)
 
         if not self.uuid_for_skined_data:
             return
-        
+
         apply_mat_to_all = _PrimitiveCreator.apply_mat_to_all
         zup2yup = _PrimitiveCreator.zup2yup
-    
 
         # Revert location transformation
         _yup2zup(self.locs)
@@ -278,12 +284,12 @@ if bpy.app.version >= (3, 6, 0):
         engine to correctly load skinned meshes.
         """
         global _original_get_normals
-        
+
         _original_get_normals(self)
 
         if not self.armature and self.blender_object:
             return
-        
+
         apply_mat_to_all = _PrimitiveCreator.apply_mat_to_all
         zup2yup = _PrimitiveCreator.zup2yup
         normalize_vecs = _PrimitiveCreator.normalize_vecs
@@ -309,7 +315,7 @@ if bpy.app.version >= (3, 6, 0):
             for ns in self.morph_normals:
                 ns[:] = apply_mat_to_all(normal_transform, ns)
                 normalize_vecs(ns)
-    
+
         for ns in [self.normals, *self.morph_normals]:
             # Replace zero normals with the unit UP vector.
             # Seems to happen sometimes with degenerate tris?
@@ -333,17 +339,15 @@ elif bpy.app.version >= (3, 3, 0):
         engine to correctly load skinned meshes.
         """
         global _original_get_positions
-        
+
         locs, morph_locs = _original_get_positions(blender_mesh, key_blocks, armature, blender_object, export_settings)
 
         if not armature:
             return locs, morph_locs
-     
+
         global _gltf2_blender_extract
         apply_mat_to_all = _gltf2_blender_extract.__apply_mat_to_all
         zup2yup = _gltf2_blender_extract.__zup2yup
-    
-        
 
         # Revert location transformation
         _yup2zup(locs)
@@ -371,15 +375,15 @@ elif bpy.app.version >= (3, 3, 0):
         for vs in morph_locs:
             zup2yup(vs)
         return locs, morph_locs
-    
+
     def msfs_get_normals(blender_mesh, key_blocks, armature, blender_object, export_settings):
         global _original_get_normals
-        
+
         normals, morph_normals =_original_get_normals(blender_mesh, key_blocks, armature, blender_object, export_settings)
 
         if not armature and blender_object:
             return normals, morph_normals
-        
+
         global _gltf2_blender_extract
         apply_mat_to_all = _gltf2_blender_extract.__apply_mat_to_all
         zup2yup = _gltf2_blender_extract.__zup2yup
@@ -406,7 +410,7 @@ elif bpy.app.version >= (3, 3, 0):
             for ns in morph_normals:
                 ns[:] = apply_mat_to_all(normal_transform, ns)
                 normalize_vecs(ns)
-    
+
         for ns in [normals, *morph_normals]:
             # Replace zero normals with the unit UP vector.
             # Seems to happen sometimes with degenerate tris?
@@ -424,6 +428,83 @@ elif bpy.app.version >= (3, 3, 0):
         return normals, morph_normals
 # endregion
 
+# region Permission Error Fix
+def _create_tex_dir(output_path: str)->bool:
+    try:
+        os.makedirs(output_path, exist_ok=True)
+        return True
+    except:
+        print(f"Texture dir creation failed: {output_path}")
+        return False
+
+class ExportedImageCache():
+    """Keep a set of already exported images to prevent 
+    writing image multiple times when exporting multiple gltfs.
+
+    Only used when export_settings.export_keep_originals is False and 
+    images are saved into provided export_texture_dir.
+    """
+    _exported_images : set[str] = set()
+
+    @classmethod
+    def get_exported_images(cls)->set[str]:
+        return cls._exported_images
+    
+    @classmethod
+    def reset(cls):
+        cls._exported_images = set()
+
+    @classmethod
+    def add_to_cache(cls, path: str):
+        cls._exported_images.add(path)
+
+    @classmethod
+    def is_already_exported(cls, path: str)->bool:
+        return path in cls._exported_images
+
+def _save_image(dst_path: Path, data):
+    dst_path = dst_path.resolve()
+    dst_path_str = dst_path.as_posix()
+    if ExportedImageCache.is_already_exported(dst_path_str):
+        return
+
+    if p4.USE_P4:
+        MSFS2024_LOGGER = msfs_logs.get_logger()
+        p4_output = p4.P4LogOutput()
+        if not p4.p4_session_edit(dst_path_str, remove_read_only=True):
+            MSFS2024_LOGGER.error(
+                message=f"'{dst_path_str}' : Could not be opened for edit.",
+                details=f"P4 error:\n{str(p4_output)}",
+            )
+            ExportedImageCache.add_to_cache(dst_path_str)
+            return
+
+    # Add a try except to prevent a permission error when live asset reloading is enabled in engine.
+    try:
+        with open(dst_path_str, "wb") as f:
+            f.write(data)
+            ExportedImageCache.add_to_cache(dst_path_str)
+    except:
+        return
+
+
+def msfs_finalize_images(self):
+    output_path = self.export_settings["gltf_texturedirectory"]
+    images = self._GlTF2Exporter__images
+    if not images:
+        return
+    
+    result = _create_tex_dir(output_path)
+    if not result:
+        return
+
+    for image in images.values():
+        dst_path = Path(output_path) / image.name
+        dst_path = dst_path.with_suffix(image.file_extension)
+        _save_image(dst_path, image.data)
+
+
+# endregion
 
 def register():
     # Not following pep8 but import must be done in register in order to correctly patch exporter in background mode.
@@ -489,8 +570,16 @@ def register():
         _original_get_normals = _gltf2_blender_extract.__get_normals
         _gltf2_blender_extract.__get_normals = msfs_get_normals
 
+
+    # 'finalize_images' function can trigger a permission error when "live asset reloading" is enabled.
+    if bpy.app.version >= (4, 5, 0):
+        from io_scene_gltf2.blender.exp.exporter import GlTF2Exporter
+    else:   
+        from io_scene_gltf2.blender.exp.gltf2_blender_gltf2_exporter import GlTF2Exporter
+    GlTF2Exporter.finalize_images = msfs_finalize_images
+
 def unregister():
-    # Reload patched modules to undo patch
+    # Reload patched modules to undo patch - Force Keep Animation
     to_reload = []
 
     if bpy.app.version >= (4, 5, 0):
@@ -526,6 +615,15 @@ def unregister():
         )
     if primitive_extract:
         to_reload.append(primitive_extract)
+
+    # Reload patched modules to undo patch - Texture permission error patch
+    gltf2_blender_gltf2_exporter = None
+    if bpy.app.version >= (4, 5, 0):
+        from io_scene_gltf2.blender.exp import exporter as gltf2_blender_gltf2_exporter
+    else:   
+        from io_scene_gltf2.blender.exp import gltf2_blender_gltf2_exporter
+    if gltf2_blender_gltf2_exporter:
+        to_reload.append(gltf2_blender_gltf2_exporter)
 
     if not to_reload:
         return

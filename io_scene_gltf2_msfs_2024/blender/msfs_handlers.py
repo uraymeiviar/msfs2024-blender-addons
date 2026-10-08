@@ -14,14 +14,15 @@ from io_scene_gltf2_msfs_2024.io.exp import lod_groups as exp_lod_groups
 from io_scene_gltf2_msfs_2024.io.exp import presets as exp_presets
 
 
+
 from ..io.com import msfs_path_utils
 
 HANDLER_DISABLED_ENV_VAR = "MSFS_HANDLERS_DISABLED"
-
+MSFS_HAS_DEFAULT_COLOR_TAG = "msfs_has_default_vcolor"
 # region Handlers
-known_mesh_names = set()
+
 @persistent
-def new_object_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Depsgraph):
+def new_object_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Depsgraph | None):
     """
     Add a default vertex color on new created meshes or converted object (curve to mesh for example). 
 
@@ -32,16 +33,24 @@ def new_object_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Depsgraph):
     Be carefull, this function is launched on depspgraph update, 
     it must be fast.
     """
-    # Store obj and it's current type in a tuple
-    global known_mesh_names
-    current_mesh_names = set(bpy.data.meshes.keys())
-    new_mesh_names = current_mesh_names - known_mesh_names
-    known_mesh_names = current_mesh_names
+    if not depsgraph:
+        return
+    for update in depsgraph.updates:
+        if not update.is_updated_geometry:
+            continue
+        mesh = update.id
 
-    for name in new_mesh_names:
-        mesh = bpy.data.meshes.get(name)
-        if mesh:
-            msfs_mesh_utils.add_default_vcolor(mesh)
+        if not isinstance(mesh, bpy.types.Mesh) :
+            continue
+        if getattr(mesh, MSFS_HAS_DEFAULT_COLOR_TAG, False):
+            continue
+        # Can't set attribute on evaluated mesh
+        original_mesh = mesh.original
+        if not original_mesh:
+            continue
+        
+        msfs_mesh_utils.add_default_vcolor(original_mesh)
+        setattr(original_mesh, MSFS_HAS_DEFAULT_COLOR_TAG, True)
 
 converting_old_gizmo = False
 if bpy.app.version >= (4,5,0):
@@ -116,7 +125,7 @@ def on_save_pre(filepath:str):
     new_scene = False
 
     if filepath and scene_opened_for_edit == filepath:
-        if p4.use_p4():
+        if p4.USE_P4:
             p4_output = p4.P4LogOutput()
             if not p4.p4_edit(filepath, p4_output=p4_output):
                 print("Blender scene p4 edit failed:\n")
@@ -188,18 +197,25 @@ def disable_loading_saving_handlers():
 
 
 # endregion
+def disable_handlers(env: dict):
+    env[HANDLER_DISABLED_ENV_VAR] = "True"
+
+def are_handlers_disabled():
+    return os.environ.get(HANDLER_DISABLED_ENV_VAR, None)
 
 def register():
+    
     if os.environ.get(HANDLER_DISABLED_ENV_VAR, None):
         # Disable handlers if addon is loaded in subprocess
         return
     enable_default_vertex_color_handlers()
     enable_loading_saving_handlers()
-
+    setattr(bpy.types.Mesh, MSFS_HAS_DEFAULT_COLOR_TAG, bpy.props.BoolProperty(name="Default Vertex Color Tag", default=False, options={"HIDDEN"}))
 
 def unregister():
     disable_default_vertex_color_handlers()
     disable_loading_saving_handlers()
-
-
-    
+    try:
+        delattr(bpy.types.Mesh, MSFS_HAS_DEFAULT_COLOR_TAG)
+    except:
+        pass

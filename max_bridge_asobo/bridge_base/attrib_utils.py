@@ -8,7 +8,7 @@ import random
 import bpy
 import numpy as np
 
-from max_bridge_msfs_2024.common import usd_properties, obj_utils, ope_utils
+from max_bridge_asobo.bridge_base import usd_properties, obj_utils, ope_utils
 
 
 def get_attrib_by_name(
@@ -105,7 +105,7 @@ def convert_color_attribute_domain(
     # Prepare a context override
     context_override = ope_utils.get_context_override([obj], obj)
 
-    current_attrib_name = obj.data.attributes.active_color.name
+    current_attrib_name = obj.data.attributes.active_color_name
     # switch active attribute for operator
     set_active_color_attribute(obj, attrib_name)
     # Execute the conversion in the overridden context
@@ -233,18 +233,4 @@ def set_obj_color_attrib(obj:bpy.types.Object):
 
     set_active_color_attribute(obj, color_attrib_name)
 
-def rename_uv_maps(obj:bpy.types.Object):
-    """
-    Rename UV maps of the specified object or the active object in Blender.
 
-    Args:
-        obj : The object whose UV maps will be renamed.
-    """
-
-    if not obj.data or not hasattr(obj.data, 'uv_layers'):
-        return
-
-    uv_layers = obj.data.uv_layers
-    for index, uv_map in enumerate(uv_layers):
-        # Construct the new name
-        uv_map.name = f"UV{index+1}"

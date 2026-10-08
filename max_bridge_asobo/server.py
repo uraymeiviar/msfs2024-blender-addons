@@ -9,9 +9,9 @@ import time
 import socket
 import json
 
-from max_bridge_msfs_2024.host import HOST, BLENDERPORT
-from max_bridge_msfs_2024 import importers
-from max_bridge_msfs_2024.common import ui_utils
+from max_bridge_asobo.host import HOST, BLENDERPORT
+from max_bridge_asobo import importers
+from max_bridge_asobo.bridge_base import ui_utils
 
 from bpy.app.handlers import persistent
 
@@ -85,7 +85,7 @@ class ThreadChecker(threading.Thread):
         threading.Thread.__init__(self)
         self.run_checker = True
 
-    # Start the thread to start listing to the port.
+    # Start the thread to start listening to the port.
     def run(self):
 
         while self.run_checker:
@@ -236,5 +236,21 @@ class MAXBRIDGE_OT_stop_max_bridge(bpy.types.Operator):
         server_running = False
         return {"FINISHED"}
 
+classes = (
+    
+    MAXBRIDGE_OT_start_max_bridge,
+    MAXBRIDGE_OT_stop_max_bridge,
+)
+
+def register():
+    for cls in classes:
+        bpy.utils.register_class(cls)
+
+
+
 def unregister():
     MAXBRIDGE_OT_stop_max_bridge.execute(None, None)
+    for cls in classes:
+        bpy.utils.unregister_class(cls)
+
+    

@@ -4,7 +4,8 @@ from enum import Enum
 import bpy
 import bpy.utils.previews
 
-from max_bridge_msfs_2024 import server,exporters,addon_prefs
+from max_bridge_asobo import server, exporters, importers, addon_prefs
+
 
 DOCUMENTATION = (Path(__file__).parents[1]/"documentation.html").as_uri()
 
@@ -102,7 +103,7 @@ class MAXBRIDGE_PT_MaxBridge(bpy.types.Panel):
 
         col.separator(factor=0.5)
         layout.prop(prefs,"bridge_preset", text="Preset ")
-        
+
 
 class MAXBRIDGE_PT_MaxBridgeExport(bpy.types.Panel):
     bl_label = "Export"
@@ -132,9 +133,12 @@ class MAXBRIDGE_PT_MaxBridgeImport(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout 
         prefs = addon_prefs.get_addon_prefs()
-        layout.prop(prefs, "reuse_existing_collections")
-        if prefs.bridge_preset == exporters.BridgeExporters.msfs_2024.name:
-            layout.prop(prefs, "msfs_2024_set_exporter_settings")
+        
+        imp = importers.get_current_importer(prefs)
+        if imp:
+            imp._draw_base_settings(layout)
+            imp.draw_settings(layout)
+    
         text = "Stop Bridge" if server.server_running else "Start Bridge"
         icon_value = (
             Icons.on.icon_id()
@@ -169,14 +173,21 @@ classes = (
     
     MAXBRIDGE_OT_ToggleBridge,
     MAXBRIDGE_OT_SendSelection,
+    MAXBRIDGE_OT_SendAll,
     MAXBRIDGE_PT_MaxBridge,
+    MAXBRIDGE_PT_MaxBridgeExport,
+    MAXBRIDGE_PT_MaxBridgeImport
 )
 
 def register():
+    for cls in classes:
+        bpy.utils.register_class(cls)
     register_icons()
 
 
 def unregister():
+    for cls in classes:
+        bpy.utils.unregister_class(cls)
     unregister_icons()
 
 def set_cursor(cursor_type):

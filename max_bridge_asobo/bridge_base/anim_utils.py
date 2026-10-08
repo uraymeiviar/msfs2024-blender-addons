@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import bpy
 
 from enum import Enum
 
-from max_bridge_msfs_2024 import logger
-from max_bridge_msfs_2024.common import ope_utils, obj_utils
+from max_bridge_asobo import logger
+from max_bridge_asobo.bridge_base import ope_utils
 
 logging = logger.getLogger()
 
@@ -13,6 +15,48 @@ class TransformAttribs(Enum):
     LOCATION = "location"
     ROTATION = "rotation"
     SCALE = "scale"
+
+
+def get_action_first_channelbag(
+    action: bpy.types.Action,
+) -> bpy.types.ActionChannelbag | None:
+    if bpy.app.version >= (5, 2, 0):
+        channelbag = None
+        try:
+            slot = action.slots[0]
+            strip = action.layers[0].strips[0]
+            channelbag = strip.channelbag(slot)
+            return channelbag
+        except:
+            pass
+
+    return None
+
+def get_action_groups(
+    action: bpy.types.Action,
+) -> bpy.types.ActionChannelbagGroups | bpy.types.ActionGroups | None:
+    if bpy.app.version >= (5, 2, 0):
+        channelbag = None
+
+        channelbag = get_action_first_channelbag(action)
+        if channelbag is None:
+            return None
+        return channelbag.groups
+    else:
+        return action.groups
+
+
+def get_action_fcurves(
+    action: bpy.types.Action,
+) -> bpy.types.ActionChannelbagFCurves | bpy.types.ActionFCurves | None:
+    if bpy.app.version >= (5, 2, 0):
+        channelbag = get_action_first_channelbag(action)
+        if not channelbag:
+            return None
+
+        return channelbag.fcurves  # bpy.types.ActionChannelbagFCurves
+
+    return action.fcurves  # bpy.types.ActionFCurves
 
 
 def bake_objects_animation(objects: list[bpy.types.Object]):
@@ -36,7 +80,10 @@ def bake_objects_animation(objects: list[bpy.types.Object]):
 def _has_keyframe(obj: bpy.types.Object, transform_attrib:str) -> bool:
     anim = obj.animation_data
     if anim is not None and anim.action is not None:
-        for fcu in anim.action.fcurves:
+        fcurves = get_action_fcurves(anim.action)
+        if not fcurves:
+            return False
+        for fcu in fcurves:
             if fcu.data_path == transform_attrib:
                 return len(fcu.keyframe_points) > 0
     return False
@@ -52,12 +99,13 @@ def is_action_static(action: bpy.types.Action, epsilon=1e-4):
     """
     Returns True if the action has constant keyframes.
     """
-    if not action.fcurves:
+    fcurves = get_action_fcurves(action)
+    if not fcurves:
         return True
 
     start, end = action.frame_range
 
-    for fcurve in action.fcurves:
+    for fcurve in fcurves:
         if fcurve.mute:
             continue
 
@@ -194,8 +242,8 @@ def remove_object_action(obj: bpy.types.Object, remove_from_data: bool = True) -
 
     return False
 
-
 def extract_action_range(
+    datablock: bpy.types.ID,
     source_action: bpy.types.Action,
     frame_range: tuple[int, int],
     name: str | None = None,
@@ -216,17 +264,33 @@ def extract_action_range(
     start, end = frame_range
     name = name or f"{source_action.name}_extract_{start}_{end}"
     new_action = bpy.data.actions.new(name)
+    source_fcurves = get_action_fcurves(source_action)
+    if not source_fcurves:
+        return new_action
+
+    if bpy.app.version >= (5, 2, 0):
+        slot = new_action.slots.new(id_type=datablock.id_type, name=datablock.name)
+        layer = new_action.layers.new(name=datablock.name)
+        strip: bpy.types.ActionKeyframeStrip = layer.strips.new()
+        strip.channelbags.new(slot)
+
+    new_fcurves = get_action_fcurves(new_action)
+    if new_fcurves is None:
+        return new_action
+    action_groups = get_action_groups(new_action)
+    if action_groups is None:
+        return new_action
     
-    for fcurve in source_action.fcurves:
+    for fcurve in source_fcurves:
         # Create identical FCurve in new action
-        new_fcurve = new_action.fcurves.new(
+        new_fcurve = new_fcurves.new(
             data_path=fcurve.data_path, index=fcurve.array_index
-        )
+        )   
         # Match keyframe property rna_path
         if fcurve.group:
-            group = new_action.groups.get(fcurve.group.name, None)
+            group = action_groups.get(fcurve.group.name, None)
             if not group:
-                group = new_action.groups.new(fcurve.group.name)
+                group = action_groups.new(fcurve.group.name)
             new_fcurve.group = group
 
         last_value = 0
@@ -305,8 +369,10 @@ def filter_action_to_bones(action: bpy.types.Action, bone_names: str):
         raise ValueError("bone_names list cannot be empty")
 
     fcurves_to_remove = []
-
-    for fcurve in action.fcurves:
+    fcurves = get_action_fcurves(action)
+    if not fcurves:
+        return
+    for fcurve in fcurves:
         # Bone-related data_path starts like 'pose.bones["BoneName"].location'
         path = fcurve.data_path
         if path.startswith('pose.bones["'):
@@ -317,4 +383,4 @@ def filter_action_to_bones(action: bpy.types.Action, bone_names: str):
                 fcurves_to_remove.append(fcurve)
 
     for fc in fcurves_to_remove:
-        action.fcurves.remove(fc)
+        fcurves.remove(fc)

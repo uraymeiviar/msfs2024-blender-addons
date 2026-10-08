@@ -1071,20 +1071,33 @@ def _construct_input_output_accessors(
 
     min_time = keyframes[0].seconds 
     max_time = keyframes[-1].seconds
-
-    input_accessor = gltf2_blender_gather_accessors.gather_accessor(
-        gltf2_io_binary_data.BinaryData.from_list(
-            final_frame_times,
-            gltf2_io_constants.ComponentType.Float
-        ),
-        gltf2_io_constants.ComponentType.Float,
-        len(final_frame_times),
-        tuple([max_time]),
-        tuple([min_time]),
-        gltf2_io_constants.DataType.Scalar,
-        export_settings
-    )
-
+    if bpy.app.version < (5, 2, 0):
+        input_accessor = gltf2_blender_gather_accessors.gather_accessor(
+            gltf2_io_binary_data.BinaryData.from_list(
+                final_frame_times,
+                gltf2_io_constants.ComponentType.Float
+            ),
+            gltf2_io_constants.ComponentType.Float,
+            len(final_frame_times),
+            tuple([max_time]),
+            tuple([min_time]),
+            gltf2_io_constants.DataType.Scalar,
+            export_settings
+        )
+    else:
+        input_accessor = gltf2_blender_gather_accessors.gather_accessor(
+                    gltf2_io_binary_data.BinaryData.from_list(
+                        final_frame_times,
+                        gltf2_io_constants.ComponentType.Float
+                    ),
+                    gltf2_io_constants.ComponentType.Float,
+                    len(final_frame_times),
+                    tuple([max_time]),
+                    tuple([min_time]),
+                    gltf2_io_constants.DataType.Scalar,
+                    None,
+                    export_settings
+        )
     # Construct output accessor
     keyframe_values = {}
     for keyframe in keyframes:
