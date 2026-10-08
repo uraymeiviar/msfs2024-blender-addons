@@ -20,3 +20,4 @@ def message_popup(level: PopUpLevel, title:str="Bridge", message:str=""):
     elif level == PopUpLevel.WARNING:
         icon = "ERROR"
     bpy.context.window_manager.popup_menu(draw, title=title, icon=icon)
+    print(f"Bridge - {level} - {message}")

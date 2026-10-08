@@ -70,20 +70,20 @@ def get_input_identifier(
     Returns:
         str: The identifier if found, otherwise None.
     """
-    if bpy.app.version < (4, 0, 0):
+    
+    if bpy.app.version > (4, 0, 0):
+        for item in node_group.interface.items_tree:  # type: ignore
+            if not item.in_out == "INPUT" or not item.name == input_label:  # type: ignore
+                continue
 
+            return item.identifier
+    else:
         inputs = node_group.inputs
         input = inputs.get(input_label, None)
         if not input:
             return None
         identifier = input.identifier
         return identifier
-    else:
-        for item in node_group.interface.items_tree:  # type: ignore
-            if not item.in_out == "INPUT" or not item.name == input_label:  # type: ignore
-                continue
-
-            return item.identifier
     return None
 
 def construct_input_identifier_map(node_group: bpy.types.NodeGroup) -> dict:
@@ -139,6 +139,26 @@ def get_modifier_input(
     modifier: bpy.types.Modifier, input_label: str
 ) -> Any | NotFound:
     """
+    Get modifier input.
+    """
+    if bpy.app.version < (5, 2, 0):
+        raise Exception ("Can't use this function in version inferior to 5.2.0")
+    if not _is_geometry_node_modifier(modifier):
+        raise TypeError("Not a valid Geometry Node modifier!")
+
+    input_identifier = get_input_identifier(modifier.node_group, input_label)
+    if not input_identifier:
+        return NotFound
+    
+    input = getattr(modifier.properties.inputs, input_identifier, None)
+    if input:
+        return input 
+    
+    
+def get_modifier_input_value(
+    modifier: bpy.types.Modifier, input_label: str
+) -> Any | NotFound:
+    """
     Get modifier input value using input label
     """
     if not _is_geometry_node_modifier(modifier):
@@ -147,10 +167,15 @@ def get_modifier_input(
     input_identifier = get_input_identifier(modifier.node_group, input_label)
     if not input_identifier:
         return NotFound
-    return modifier[input_identifier]
+    if bpy.app.version >= (5, 2, 0):
+        input = getattr(modifier.properties.inputs, input_identifier, None)
+        if input:
+            return input.value 
+    else:
+        return modifier[input_identifier]
 
 
-def set_modifier_input(modifier: bpy.types.Modifier, input_label: str, value: Any):
+def set_modifier_input_value(modifier: bpy.types.Modifier, input_label: str, value: Any):
     """
     Set modifier input value using input label
     """
@@ -160,6 +185,11 @@ def set_modifier_input(modifier: bpy.types.Modifier, input_label: str, value: An
     input_identifier = get_input_identifier(modifier.node_group, input_label)
     if not input_identifier:
         return
-    modifier[input_identifier] = value
+    if bpy.app.version >= (5, 2, 0):
+        input = getattr(modifier.properties.inputs, input_identifier, None)
+        if input:
+           input.value = value 
+    else:
+        modifier[input_identifier] = value
 
 # endregion

@@ -7,9 +7,9 @@ import json
 
 import bpy
 
-from max_bridge_msfs_2024 import logger, addon_prefs
+from max_bridge_asobo import logger, addon_prefs
 
-from max_bridge_msfs_2024.common import (
+from max_bridge_asobo.bridge_base import (
     path_utils,
     attrib_utils,
     obj_utils,
@@ -17,13 +17,13 @@ from max_bridge_msfs_2024.common import (
     anim_utils,
     profiling
 )
-from max_bridge_msfs_2024.common.usd_properties import *
+from max_bridge_asobo.bridge_base.usd_properties import *
 
 logging = logger.getLogger()
 
 # Types aliases
-GENERIC_DEFS = dict[bpy.types.ID,SeriazableDef]
-OBJECT_DEFS = dict[bpy.types.Object|bpy.types.Bone,ObjectDef]
+GENERIC_DEFS = dict[bpy.types.ID, SeriazableDef | None]
+OBJECT_DEFS = dict[bpy.types.Object | bpy.types.Bone, ObjectDef | None]
 MATERIAL_DEFS = dict[bpy.types.Material,MaterialDef]
 
 class GenericUSDImporter:
@@ -40,7 +40,7 @@ class GenericUSDImporter:
     Do not instantiate this class.
     """
 
-    IMPORTER = "GenericUSDImporter"
+    ID = "GenericUSD" # Must be identical in corresponding Exporter Class
     TARGET_DCC = DCCNames.max.value
 
     @classmethod
@@ -77,7 +77,7 @@ class GenericUSDImporter:
         pass
 
     @classmethod
-    def set_obj_custom_properties(cls, obj:bpy.types.Object, properties: dict):
+    def set_obj_custom_properties(cls, obj: bpy.types.Object, properties: dict):
         """
         Reimplement this function to setup object using ObjectDef.
         This is launched at end of import process, object is already renamed 
@@ -86,7 +86,7 @@ class GenericUSDImporter:
         pass 
 
     @classmethod
-    def set_material_custom_properties(cls, material:bpy.types.Material, properties: dict):
+    def set_material_custom_properties(cls, material: bpy.types.Material, properties: dict):
         """
         Reimplement this function to set material using MaterialDef.
         This is launched at end of import process, material is already renamed 
@@ -98,9 +98,8 @@ class GenericUSDImporter:
     @classmethod
     def on_before_definitions_set(
         cls,
-        imported_objects: list[bpy.types.Object],
-        objects_definitions:OBJECT_DEFS,
-        materials_definitions:MATERIAL_DEFS
+        objects_definitions: OBJECT_DEFS,
+        materials_definitions: MATERIAL_DEFS
     ):
         """
         Do things before object and material definitions are set
@@ -110,9 +109,8 @@ class GenericUSDImporter:
     @classmethod
     def on_after_import(
         cls,
-        imported_objects: list[bpy.types.Object],
-        objects_definitions:OBJECT_DEFS,
-        materials_definitions:MATERIAL_DEFS
+        objects_definitions: OBJECT_DEFS,
+        materials_definitions: MATERIAL_DEFS
     ):
         """
         Do things after import process.
@@ -120,6 +118,25 @@ class GenericUSDImporter:
         pass 
 
     # region Post Import Process
+
+    # region Preset Settings ui
+    @classmethod
+    def draw_settings(cls, layout: bpy.types.UILayout):
+        """Settings for SubClass Importer.
+        """
+
+        pass
+
+    @classmethod
+    def _draw_base_settings(cls, layout: bpy.types.UILayout):
+        """Settings for GenericUSDImporter.
+        Do not reimplement this function since base settings
+        should be always drawn in panel, even when using GenericUSDImporter subclass.
+        """
+        prefs = addon_prefs.get_addon_prefs()
+        layout.prop(prefs, "reuse_existing_collections")
+
+    # enregion
 
     @classmethod
     def _recreate_hierarchy(cls, imported_object_defs: OBJECT_DEFS)->OBJECT_DEFS:
@@ -421,7 +438,7 @@ class GenericUSDImporter:
 
             if hasattr(obj, "data") and obj.data not in treated_obj_data:
                 attrib_utils.set_obj_color_attrib(obj)
-                attrib_utils.rename_uv_maps(obj)
+                
                 treated_obj_data.append(obj.data)
             custom_properties = obj_def.custom_properties
             if custom_properties:
@@ -609,6 +626,18 @@ class GenericUSDImporter:
         return updated_defs
 
     @classmethod
+    def _remove_deleted_objects(cls, objects:list[bpy.types.Object])->list[bpy.types.Object]:
+        """
+        Return a new list without deleted objects.
+        """
+        clean_objects = []
+        for obj in objects:
+            if obj_utils.obj_is_valid(obj):
+                clean_objects.append(obj)
+
+        return clean_objects
+    
+    @classmethod
     def _generate_imported_defs_dict(
         cls,
         imported_data: list[bpy.types.bpy_struct],
@@ -696,11 +725,7 @@ class GenericUSDImporter:
         cls._set_objects_original_names(imported_object_defs)
         cls._set_objects_original_names(imported_material_defs)
 
-        # Rename armature bones
-        # cls._set_objects_original_names(imported_bone_defs)
-
         cls.on_before_definitions_set(
-            imported_objects,
             imported_object_defs,
             imported_material_defs
         )
@@ -711,7 +736,6 @@ class GenericUSDImporter:
         cls._set_materials_from_def(imported_material_defs)
 
         cls.on_after_import(
-            imported_objects,
             imported_object_defs,
             imported_material_defs
         )
@@ -748,7 +772,6 @@ class GenericUSDImporter:
             "import_meshes": True,
             "import_volumes": True,
             "import_shapes": True,
-            "import_subdiv": True,
             # import_instance_proxies:True,
             "import_visible_only": False,
             "create_collection": False,
@@ -759,12 +782,16 @@ class GenericUSDImporter:
             "import_proxy": False,
             "import_render": False,
             "import_all_materials": False,
-            "import_usd_preview": False,
+            "import_usd_preview": True,
             "set_material_blend": True,
             "light_intensity_scale": 1.0,
             "mtl_name_collision_mode": "MAKE_UNIQUE",
             "import_textures_mode": "IMPORT_NONE",
         }
+        if bpy.app.version >= (5, 2, 0):
+            kwargs["import_subdivision"] = True
+        else:
+            kwargs["import_subdiv"] = True
         if bpy.app.version >= (4, 1, 0):
             kwargs["support_scene_instancing"] = False
 

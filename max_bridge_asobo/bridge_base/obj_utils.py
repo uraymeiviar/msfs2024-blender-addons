@@ -6,9 +6,9 @@ import bpy
 
 from mathutils import Vector, Matrix, Quaternion
 
-from max_bridge_msfs_2024.common.usd_properties import *
-from max_bridge_msfs_2024 import logger
-from max_bridge_msfs_2024.common import ope_utils, anim_utils
+from max_bridge_asobo.bridge_base.usd_properties import *
+from max_bridge_asobo import logger
+from max_bridge_asobo.bridge_base import anim_utils
 
 logging = logger.getLogger()
 
@@ -39,13 +39,17 @@ def duplicate_objects(objects: list[bpy.types.Object]) -> tuple[list[bpy.types.O
         objects: A list of objects to duplicate.
 
     Returns:
-        Tuple containing list of original objects (order can changed after selecting),
+        Tuple containing list of original objects,
         and a list of duplicated objects.
     """
 
     select_objects(objects)
     objects = bpy.context.selected_objects
-    bpy.ops.object.duplicate()
+    # Use copy paste to duplicate object, main benefit is that it unpack all obj.data, obj.materials etc
+    # data is read-only when it is packed.
+    bpy.ops.view3d.copybuffer()
+    bpy.ops.view3d.pastebuffer()
+
     duplicated_objects = bpy.context.selected_objects
 
     return (objects, duplicated_objects)

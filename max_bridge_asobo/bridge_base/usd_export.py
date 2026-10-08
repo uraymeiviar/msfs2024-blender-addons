@@ -8,8 +8,9 @@ import json
 import socket
 
 from dataclasses import dataclass
-from max_bridge_msfs_2024 import logger
-from max_bridge_msfs_2024.common import (
+
+from max_bridge_asobo import logger
+from max_bridge_asobo.bridge_base import (
     mat_utils,
     obj_utils,
     ui_utils,
@@ -17,8 +18,8 @@ from max_bridge_msfs_2024.common import (
     attrib_utils,
     anim_utils
 )
-from max_bridge_msfs_2024.common.usd_properties import *
-from max_bridge_msfs_2024.host import HOST, MAXPORT
+from max_bridge_asobo.bridge_base.usd_properties import *
+from max_bridge_asobo.host import HOST, MAXPORT
 
 import bpy
 
@@ -53,9 +54,12 @@ class GenericUSDExporter:
     """
 
     # region Exporter Def
-    EXPORTER = "GenericUSDExporter"  
+    ID = "GenericUSD"  # Must be identical in corresponding Importer Class
     FROM_DCC = DCCNames.blender.value  
     TARGET_DCC = DCCNames.max.value
+
+    PRESET_UI_LABEL = "3ds Max Generic"
+    
     # endregion
     # Assign CustomObjectClasses if necessary
     custom_object_classes: CustomObjectClasses | None = None
@@ -182,6 +186,8 @@ class GenericUSDExporter:
                 )
                 break
         return class_def
+
+
 
     # endregion
 
@@ -363,7 +369,7 @@ class GenericUSDExporter:
                 if not curve_data.splines:
                     spline = curve_data.splines.new("POLY")
                     spline.points.add(1)
-                    
+
     @classmethod
     def _preprocess_objects(cls, objects: list[bpy.types.Object]) -> PreProcessResult:
         """Clone objects and prepare them for export:
@@ -390,9 +396,6 @@ class GenericUSDExporter:
             unique_materials, original_materials_names
         )
         # Assign unique names containing handles
-        original_object_names = []
-        for obj in objects:
-            original_object_names.append(obj.name)
         obj_utils.unique_rename_objects(duplicated_objects)
 
         # Replace custom object types by dummies
@@ -465,29 +468,36 @@ class GenericUSDExporter:
         export_def.path = usd_path
         export_def.from_dcc = cls.FROM_DCC
         export_def.target_dcc = cls.TARGET_DCC
-        export_def.exporter = cls.EXPORTER
+        export_def.exporter = cls.ID
 
         to_export = preprocess_result.objects 
 
         create_json_from_def(export_def)
         try:
             obj_utils.select_objects(to_export)
+            kwargs = {
+                "filepath": usd_path,
+                "selected_objects_only": True,
+                "export_animation": True,
+                "export_hair": False,
+                "export_uvmaps": True,
+                "export_normals": True,
+                "export_materials": True,
+                "use_instancing": True,
+                "evaluation_mode": "VIEWPORT",
+                "generate_preview_surface": True,
+                "root_prim_path": "/root",
+            }
+            if bpy.app.version >= (5, 2, 0):
+                kwargs["export_textures_mode"] = "KEEP"
+            else:
+                kwargs["visible_objects_only"] = False
+                kwargs["export_textures"] = False
             bpy.ops.wm.usd_export(
-                filepath=usd_path,
-                selected_objects_only=True,
-                visible_objects_only=False,
-                export_animation=True,
-                export_hair=False,
-                export_uvmaps=True,
-                export_normals=True,
-                export_materials=True,
-                use_instancing=True,
-                evaluation_mode="VIEWPORT",
-                generate_preview_surface=True,
-                export_textures=False,
-                root_prim_path="/root"
+                **kwargs
             )
-        except:
+        except Exception as e:
+            print(e)
             usd_path=""
             pass
 
@@ -495,8 +505,6 @@ class GenericUSDExporter:
 
         obj_utils.select_objects(objects)
         return usd_path
-
-    
 
     @classmethod
     def export_selected(cls, usd_path: str) -> str:
