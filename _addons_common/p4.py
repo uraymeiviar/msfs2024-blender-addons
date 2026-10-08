@@ -88,6 +88,9 @@ USE_P4 = _use_p4()
 
 
 def get_client_workspaces()->list[WorkspaceInfo]:
+    # Fork: p4 may not be installed (push_p4_session calls this after every export)
+    if not USE_P4:
+        return []
 
     cmd = ["p4", "clients", "--me"]
     process = subprocess.run(
